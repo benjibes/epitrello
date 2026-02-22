@@ -328,6 +328,7 @@ export const tagsRoute = await import('../../src/routes/api/tags/+server');
 export const boardFullRoute = await import('../../src/routes/api/board-full/+server');
 export const loginRoute = await import('../../src/routes/api/login/+server');
 export const usersRoute = await import('../../src/routes/api/users/+server');
+export const mcpRoute = await import('../../src/routes/api/mcp/+server');
 
 export const expectHttpErrorStatus = async (
 	maybePromise: PromiseLike<unknown> | unknown,
