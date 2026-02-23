@@ -50,10 +50,12 @@
 	const SEARCH_DEBOUNCE_MS = 180;
 	const SEARCH_SUGGESTIONS_LIMIT = 8;
 	const NOTIFICATIONS_REFRESH_INTERVAL_MS = 45000;
+	type BoardTemplateId = 'product_roadmap' | 'sprint_planning' | 'personal_project';
 
 	let currentUserId = $state('');
 	let isCreatePanelOpen = $state(false);
 	let createBoardName = $state('');
+	let createBoardTemplateId = $state<BoardTemplateId | ''>('');
 	let createBoardError = $state('');
 	let isCreatingBoard = $state(false);
 	let createNameInput = $state<HTMLInputElement | null>(null);
@@ -465,6 +467,7 @@
 	function closeCreatePanel() {
 		if (isCreatingBoard) return;
 		isCreatePanelOpen = false;
+		createBoardTemplateId = '';
 		createBoardError = '';
 	}
 
@@ -497,7 +500,8 @@
 		}
 	}
 
-	function applyTemplateName(name: string) {
+	function applyTemplate(templateId: BoardTemplateId, name: string) {
+		createBoardTemplateId = templateId;
 		createBoardName = name;
 		createBoardError = '';
 	}
@@ -530,7 +534,8 @@
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				ownerId: currentUserId,
-				name
+				name,
+				templateId: createBoardTemplateId || undefined
 			})
 		});
 
@@ -553,6 +558,7 @@
 
 		isCreatingBoard = false;
 		isCreatePanelOpen = false;
+		createBoardTemplateId = '';
 		goto(resolve(`/b/${uuid}`));
 	}
 
@@ -841,24 +847,36 @@
 					<div class="flex flex-wrap gap-2">
 						<button
 							type="button"
-							class="cursor-pointer rounded-md border border-sky-300/25 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-slate-100 transition-colors hover:bg-slate-700"
-							onclick={() => applyTemplateName('Product Roadmap')}
+							class={`cursor-pointer rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+								createBoardTemplateId === 'product_roadmap'
+									? 'border-sky-200/50 bg-sky-500/25 text-sky-100'
+									: 'border-sky-300/25 bg-slate-800/80 text-slate-100 hover:bg-slate-700'
+							}`}
+							onclick={() => applyTemplate('product_roadmap', 'Product Roadmap')}
 							disabled={isCreatingBoard}
 						>
 							Product Roadmap
 						</button>
 						<button
 							type="button"
-							class="cursor-pointer rounded-md border border-sky-300/25 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-slate-100 transition-colors hover:bg-slate-700"
-							onclick={() => applyTemplateName('Sprint Planning')}
+							class={`cursor-pointer rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+								createBoardTemplateId === 'sprint_planning'
+									? 'border-sky-200/50 bg-sky-500/25 text-sky-100'
+									: 'border-sky-300/25 bg-slate-800/80 text-slate-100 hover:bg-slate-700'
+							}`}
+							onclick={() => applyTemplate('sprint_planning', 'Sprint Planning')}
 							disabled={isCreatingBoard}
 						>
 							Sprint Planning
 						</button>
 						<button
 							type="button"
-							class="cursor-pointer rounded-md border border-sky-300/25 bg-slate-800/80 px-3 py-2 text-xs font-semibold text-slate-100 transition-colors hover:bg-slate-700"
-							onclick={() => applyTemplateName('Personal Project')}
+							class={`cursor-pointer rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+								createBoardTemplateId === 'personal_project'
+									? 'border-sky-200/50 bg-sky-500/25 text-sky-100'
+									: 'border-sky-300/25 bg-slate-800/80 text-slate-100 hover:bg-slate-700'
+							}`}
+							onclick={() => applyTemplate('personal_project', 'Personal Project')}
 							disabled={isCreatingBoard}
 						>
 							Personal Project
