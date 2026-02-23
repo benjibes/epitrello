@@ -32,6 +32,7 @@
 	let isOwner = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
+	let clearing = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');
 	let sharingError = $state('');
@@ -239,6 +240,48 @@
 			deleting = false;
 		}
 	}
+
+	async function handleClearBoardContent() {
+		if (!currentUserId || clearing || !isOwner) return;
+
+		const confirmClear = confirm(
+			`Clear all lists/cards/tags inside "${boardName.trim() || data.board.name}"?`
+		);
+		if (!confirmClear) return;
+
+		clearing = true;
+		errorMessage = '';
+		successMessage = '';
+
+		try {
+			const response = await fetch('/api/board-clear', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					boardId: data.board.id,
+					userId: currentUserId
+				})
+			});
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				message?: string;
+				clearedLists?: number;
+				clearedCards?: number;
+			};
+
+			if (!response.ok) {
+				errorMessage = payload.error ?? payload.message ?? 'Board clear failed.';
+				return;
+			}
+
+			successMessage = `Board content cleared (${Number(payload.clearedLists ?? 0)} list(s), ${Number(payload.clearedCards ?? 0)} card(s)).`;
+		} catch (err) {
+			console.error('Erreur clear board content', err);
+			errorMessage = 'Network error while clearing board content.';
+		} finally {
+			clearing = false;
+		}
+	}
 </script>
 
 {#if ready}
@@ -440,17 +483,29 @@
 			class="mt-5 rounded-xl border border-rose-300/25 bg-slate-900/75 p-5 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
 		>
 			<h2 class="text-lg font-semibold text-rose-200">Danger zone</h2>
-			<p class="mt-1 text-sm text-slate-300">Delete the board and all related lists/cards.</p>
-			<button
-				type="button"
-				class="mt-4 cursor-pointer rounded-md border border-rose-300/40 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/35 disabled:cursor-not-allowed disabled:opacity-60"
-				disabled={deleting || !isOwner}
-				onclick={handleDeleteBoard}
-			>
-				{deleting ? 'Deleting...' : 'Delete board'}
-			</button>
+			<p class="mt-1 text-sm text-slate-300">High-impact actions on this board.</p>
+			<div class="mt-4 flex flex-wrap items-center gap-3">
+				<button
+					type="button"
+					class="cursor-pointer rounded-md border border-amber-300/40 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 transition-colors hover:bg-amber-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={clearing || !isOwner}
+					onclick={handleClearBoardContent}
+				>
+					{clearing ? 'Clearing...' : 'Clear board content'}
+				</button>
+				<button
+					type="button"
+					class="cursor-pointer rounded-md border border-rose-300/40 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={deleting || !isOwner}
+					onclick={handleDeleteBoard}
+				>
+					{deleting ? 'Deleting...' : 'Delete board'}
+				</button>
+			</div>
 			{#if !isOwner}
-				<p class="mt-2 text-sm text-slate-300">Only the board owner can delete this board.</p>
+				<p class="mt-2 text-sm text-slate-300">
+					Only the board owner can clear board content or delete this board.
+				</p>
 			{/if}
 		</section>
 	</main>

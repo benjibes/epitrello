@@ -70,23 +70,14 @@
 	let boardSyncKey = $state('');
 
 	type PromptOperation =
-		| { type: 'create_list'; listName: string }
-		| { type: 'create_card'; listName: string; cardTitle: string }
-		| { type: 'add_tag'; cardTitle: string; tagName: string };
-
-	type BatchPreviewEntry = {
-		status: 'ok' | 'warning' | 'blocked';
-		description: string;
-	};
+		| { type: 'create_list'; listName: string; sourceLine?: number }
+		| { type: 'create_card'; listName: string; cardTitle: string; sourceLine?: number }
+		| { type: 'add_tag'; cardTitle: string; tagName: string; sourceLine?: number };
 
 	type UndoOperation =
 		| { type: 'delete_list'; listId: string; listName: string }
 		| { type: 'delete_card'; cardId: string; cardTitle: string }
 		| { type: 'remove_tag'; cardId: string; tagName: string; cardTitle: string };
-
-	let mcpPreviewEntries = $state<BatchPreviewEntry[]>([]);
-	let mcpPreviewSummary = $state('');
-	let mcpPreviewBlockedCount = $state(0);
 
 	function applyLoadedState(payload: BoardFullResponse) {
 		if (!payload || !payload.board) return;
@@ -323,110 +314,124 @@
 			.filter((entry) => entry.length > 0);
 	}
 
-	function pushListOperations(operations: PromptOperation[], payload: string) {
+	function pushListOperations(operations: PromptOperation[], payload: string, sourceLine: number) {
 		for (const listName of splitValues(payload)) {
-			operations.push({ type: 'create_list', listName });
+			operations.push({ type: 'create_list', listName, sourceLine });
 		}
 	}
 
-	function pushCardOperations(operations: PromptOperation[], listName: string, payload: string) {
+	function pushCardOperations(
+		operations: PromptOperation[],
+		listName: string,
+		payload: string,
+		sourceLine: number
+	) {
 		for (const cardTitle of splitValues(payload)) {
-			operations.push({ type: 'create_card', listName: listName.trim(), cardTitle });
+			operations.push({ type: 'create_card', listName: listName.trim(), cardTitle, sourceLine });
 		}
 	}
 
 	function parsePromptOperations(prompt: string): PromptOperation[] {
 		const operations: PromptOperation[] = [];
-		const chunks = prompt
-			.split(/\n+/)
-			.flatMap((line) => line.split(';'))
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
+		const lines = prompt.split('\n');
 
-		for (const line of chunks) {
-			const lower = line.toLowerCase();
+		for (const [index, rawLine] of lines.entries()) {
+			const sourceLine = index + 1;
+			const chunks = rawLine
+				.split(';')
+				.map((line) => line.trim())
+				.filter((line) => line.length > 0);
 
-			if (lower.startsWith('list:') || lower.startsWith('liste:')) {
-				const payload = line.slice(line.indexOf(':') + 1).trim();
-				pushListOperations(operations, payload);
-				continue;
-			}
+			for (const line of chunks) {
+				const lower = line.toLowerCase();
 
-			if (
-				lower.startsWith('create lists:') ||
-				lower.startsWith('create list:') ||
-				lower.startsWith('crée listes:') ||
-				lower.startsWith('crée liste:') ||
-				lower.startsWith('creer listes:') ||
-				lower.startsWith('creer liste:')
-			) {
-				const payload = line.slice(line.indexOf(':') + 1).trim();
-				pushListOperations(operations, payload);
-				continue;
-			}
-
-			if (lower.startsWith('card:') || lower.startsWith('carte:')) {
-				const payload = line.slice(line.indexOf(':') + 1).trim();
-				const [listNameRaw, cardTitleRaw] = payload.split('|');
-				const listName = (listNameRaw ?? '').trim();
-				const cardTitle = (cardTitleRaw ?? '').trim();
-				if (listName && cardTitle) {
-					operations.push({ type: 'create_card', listName, cardTitle });
+				if (lower.startsWith('list:') || lower.startsWith('liste:')) {
+					const payload = line.slice(line.indexOf(':') + 1).trim();
+					pushListOperations(operations, payload, sourceLine);
+					continue;
 				}
-				continue;
-			}
 
-			if (
-				lower.startsWith('tag:') ||
-				lower.startsWith('étiquette:') ||
-				lower.startsWith('etiquette:')
-			) {
-				const payload = line.slice(line.indexOf(':') + 1).trim();
-				const [cardTitleRaw, tagNameRaw] = payload.split('|');
-				const cardTitle = (cardTitleRaw ?? '').trim();
-				const tagName = (tagNameRaw ?? '').trim();
-				if (cardTitle && tagName) {
-					operations.push({ type: 'add_tag', cardTitle, tagName });
+				if (
+					lower.startsWith('create lists:') ||
+					lower.startsWith('create list:') ||
+					lower.startsWith('crée listes:') ||
+					lower.startsWith('crée liste:') ||
+					lower.startsWith('creer listes:') ||
+					lower.startsWith('creer liste:')
+				) {
+					const payload = line.slice(line.indexOf(':') + 1).trim();
+					pushListOperations(operations, payload, sourceLine);
+					continue;
 				}
-				continue;
-			}
 
-			const createListMatch = line.match(
-				/cr[eé]e(?:r)?\s+(?:les?\s+)?listes?\s*:?\s*(.+)$/i
-			);
-			if (createListMatch) {
-				pushListOperations(operations, createListMatch[1]);
-				continue;
-			}
-
-			const createCardsInListMatch = line.match(
-				/(?:ajoute|cr[eé]e(?:r)?)\s+(?:des\s+)?cartes?\s+(?:dans|sur)\s+([^:]+)\s*:?\s*(.+)$/i
-			);
-			if (createCardsInListMatch) {
-				pushCardOperations(operations, createCardsInListMatch[1], createCardsInListMatch[2]);
-				continue;
-			}
-
-			const createSingleCardMatch = line.match(
-				/cr[eé]e(?:r)?\s+(?:une?\s+)?carte\s+(.+)\s+(?:dans|sur)\s+(.+)$/i
-			);
-			if (createSingleCardMatch) {
-				const cardTitle = createSingleCardMatch[1].trim();
-				const listName = createSingleCardMatch[2].trim();
-				if (listName && cardTitle) {
-					operations.push({ type: 'create_card', listName, cardTitle });
+				if (lower.startsWith('card:') || lower.startsWith('carte:')) {
+					const payload = line.slice(line.indexOf(':') + 1).trim();
+					const [listNameRaw, cardTitleRaw] = payload.split('|');
+					const listName = (listNameRaw ?? '').trim();
+					const cardTitle = (cardTitleRaw ?? '').trim();
+					if (listName && cardTitle) {
+						operations.push({ type: 'create_card', listName, cardTitle, sourceLine });
+					}
+					continue;
 				}
-				continue;
-			}
 
-			const addTagMatch = line.match(
-				/(?:ajoute|mets?)\s+(?:le\s+)?tag\s+(.+?)\s+(?:sur|pour|à)\s+(.+)$/i
-			);
-			if (addTagMatch) {
-				const tagName = addTagMatch[1].trim();
-				const cardTitle = addTagMatch[2].trim();
-				if (cardTitle && tagName) {
-					operations.push({ type: 'add_tag', cardTitle, tagName });
+				if (
+					lower.startsWith('tag:') ||
+					lower.startsWith('étiquette:') ||
+					lower.startsWith('etiquette:')
+				) {
+					const payload = line.slice(line.indexOf(':') + 1).trim();
+					const [cardTitleRaw, tagNameRaw] = payload.split('|');
+					const cardTitle = (cardTitleRaw ?? '').trim();
+					const tagName = (tagNameRaw ?? '').trim();
+					if (cardTitle && tagName) {
+						operations.push({ type: 'add_tag', cardTitle, tagName, sourceLine });
+					}
+					continue;
+				}
+
+				const createListMatch = line.match(
+					/cr[eé]e(?:r)?\s+(?:les?\s+)?listes?\s*:?\s*(.+)$/i
+				);
+				if (createListMatch) {
+					pushListOperations(operations, createListMatch[1], sourceLine);
+					continue;
+				}
+
+				const createCardsInListMatch = line.match(
+					/(?:ajoute|cr[eé]e(?:r)?)\s+(?:des\s+)?cartes?\s+(?:dans|sur)\s+([^:]+)\s*:?\s*(.+)$/i
+				);
+				if (createCardsInListMatch) {
+					pushCardOperations(
+						operations,
+						createCardsInListMatch[1],
+						createCardsInListMatch[2],
+						sourceLine
+					);
+					continue;
+				}
+
+				const createSingleCardMatch = line.match(
+					/cr[eé]e(?:r)?\s+(?:une?\s+)?carte\s+(.+)\s+(?:dans|sur)\s+(.+)$/i
+				);
+				if (createSingleCardMatch) {
+					const cardTitle = createSingleCardMatch[1].trim();
+					const listName = createSingleCardMatch[2].trim();
+					if (listName && cardTitle) {
+						operations.push({ type: 'create_card', listName, cardTitle, sourceLine });
+					}
+					continue;
+				}
+
+				const addTagMatch = line.match(
+					/(?:ajoute|mets?)\s+(?:le\s+)?tag\s+(.+?)\s+(?:sur|pour|à)\s+(.+)$/i
+				);
+				if (addTagMatch) {
+					const tagName = addTagMatch[1].trim();
+					const cardTitle = addTagMatch[2].trim();
+					if (cardTitle && tagName) {
+						operations.push({ type: 'add_tag', cardTitle, tagName, sourceLine });
+					}
 				}
 			}
 		}
@@ -434,33 +439,20 @@
 		return operations;
 	}
 
-	function resetPromptPreview() {
-		mcpPreviewEntries = [];
-		mcpPreviewSummary = '';
-		mcpPreviewBlockedCount = 0;
-	}
-
-	function buildPromptPreview(operations: PromptOperation[]) {
+	function collectPromptOperationErrors(operations: PromptOperation[]) {
 		const knownLists = new Set(selectableLists.map((list) => list.name.trim().toLowerCase()));
 		const knownCards = new Set(selectableCards.map((card) => card.title.trim().toLowerCase()));
-		const previewEntries: BatchPreviewEntry[] = [];
-		let warningCount = 0;
-		let blockedCount = 0;
+		const errors: string[] = [];
 
-		for (const operation of operations) {
+		for (const [index, operation] of operations.entries()) {
+			const step = index + 1;
+			const sourceLabel = Number.isFinite(operation.sourceLine)
+				? `[line ${operation.sourceLine}, step ${step}]`
+				: `[step ${step}]`;
 			if (operation.type === 'create_list') {
 				const normalizedList = operation.listName.trim().toLowerCase();
-				if (knownLists.has(normalizedList)) {
-					warningCount += 1;
-					previewEntries.push({
-						status: 'warning',
-						description: `Create list "${operation.listName}" (already exists, potential duplicate).`
-					});
-				} else {
-					previewEntries.push({
-						status: 'ok',
-						description: `Create list "${operation.listName}".`
-					});
+				if (!normalizedList) {
+					errors.push(`${sourceLabel} List name is empty.`);
 				}
 				knownLists.add(normalizedList);
 				continue;
@@ -470,39 +462,32 @@
 				const normalizedList = operation.listName.trim().toLowerCase();
 				const normalizedCard = operation.cardTitle.trim().toLowerCase();
 				if (!knownLists.has(normalizedList)) {
-					blockedCount += 1;
-					previewEntries.push({
-						status: 'blocked',
-						description: `Create card "${operation.cardTitle}" in "${operation.listName}" (list not found).`
-					});
-				} else {
-					previewEntries.push({
-						status: 'ok',
-						description: `Create card "${operation.cardTitle}" in "${operation.listName}".`
-					});
+					errors.push(
+						`${sourceLabel} Unknown list "${operation.listName}" for card "${operation.cardTitle}".`
+					);
 				}
-				knownCards.add(normalizedCard);
+				if (normalizedCard.length === 0) {
+					errors.push(`${sourceLabel} Card title is empty.`);
+				} else {
+					knownCards.add(normalizedCard);
+				}
 				continue;
 			}
 
-			const normalizedCard = operation.cardTitle.trim().toLowerCase();
-			if (!knownCards.has(normalizedCard)) {
-				blockedCount += 1;
-				previewEntries.push({
-					status: 'blocked',
-					description: `Add tag "${operation.tagName}" on "${operation.cardTitle}" (card not found).`
-				});
-			} else {
-				previewEntries.push({
-					status: 'ok',
-					description: `Add tag "${operation.tagName}" on "${operation.cardTitle}".`
-				});
+			if (operation.type === 'add_tag') {
+				const normalizedCard = operation.cardTitle.trim().toLowerCase();
+				if (!knownCards.has(normalizedCard)) {
+					errors.push(
+						`${sourceLabel} Unknown card "${operation.cardTitle}" for tag "${operation.tagName}".`
+					);
+				}
+				if (!operation.tagName.trim()) {
+					errors.push(`${sourceLabel} Tag name is empty.`);
+				}
 			}
 		}
 
-		mcpPreviewEntries = previewEntries;
-		mcpPreviewSummary = `${operations.length} action(s), ${warningCount} warning(s), ${blockedCount} blocked.`;
-		mcpPreviewBlockedCount = blockedCount;
+		return errors;
 	}
 
 	async function planPromptOperationsWithAi() {
@@ -561,11 +546,6 @@
 		return operations;
 	}
 
-	async function previewPromptAssistant() {
-		const operations = await resolvePromptOperations();
-		buildPromptPreview(operations);
-	}
-
 	async function runPromptAssistant() {
 		if (!boardId || !currentUserId) {
 			return;
@@ -577,7 +557,10 @@
 		aiBatchMutationInFlight = true;
 		try {
 			const operations = await resolvePromptOperations();
-			buildPromptPreview(operations);
+			const errors = collectPromptOperationErrors(operations);
+			if (errors.length > 0) {
+				throw new Error(errors.join('\n'));
+			}
 			const batchName = resolveBatchName();
 			await logAiBatchEvent({
 				boardId,
@@ -770,65 +753,6 @@
 		}
 	}
 
-	async function clearBoardContent() {
-		if (!boardId || !currentUserId) {
-			return;
-		}
-		if (!canManage) {
-			throw new Error('Only board owner can clear this board.');
-		}
-
-		const confirmed = window.confirm(
-			'Clear the whole board content? This deletes all lists, cards and tags.'
-		);
-		if (!confirmed) {
-			return;
-		}
-
-		mcpLoading = true;
-		mcpError = '';
-
-		try {
-			const response = await fetch('/api/board-clear', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					boardId,
-					userId: currentUserId
-				})
-			});
-			const payload = (await response.json().catch(() => ({}))) as {
-				error?: string;
-				message?: string;
-				clearedLists?: number;
-				clearedCards?: number;
-			};
-
-			if (!response.ok) {
-				throw new Error(payload.error ?? payload.message ?? 'Unable to clear board.');
-			}
-
-			lastAiBatchOperations = [];
-			lastAiBatchLabel = '';
-
-			mcpOutput = JSON.stringify(
-				{
-					cleared: true,
-					clearedLists: Number(payload.clearedLists ?? 0),
-					clearedCards: Number(payload.clearedCards ?? 0)
-				},
-				null,
-				2
-			);
-
-			await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
-		} catch (error) {
-			mcpError = error instanceof Error ? error.message : 'Board clear failed.';
-		} finally {
-			mcpLoading = false;
-		}
-	}
-
 	async function runBoardMcpAction() {
 		if (!browser || !boardId || !currentUserId) {
 			return;
@@ -886,7 +810,6 @@
 				await runPromptAssistant();
 			} else {
 				mcpOutput = JSON.stringify(payload ?? {}, null, 2);
-				resetPromptPreview();
 			}
 
 			if (mcpAction !== 'get_board_full') {
@@ -1067,19 +990,6 @@
 	});
 
 	$effect(() => {
-		if (mcpAction !== 'prompt_assistant') {
-			resetPromptPreview();
-		}
-	});
-
-	$effect(() => {
-		void mcpUseAiPlanner;
-		if (mcpAction === 'prompt_assistant') {
-			resetPromptPreview();
-		}
-	});
-
-	$effect(() => {
 		if (!browser || !ready || !boardId || !currentUserId) {
 			return;
 		}
@@ -1182,14 +1092,6 @@
 				>
 					Board Settings
 				</a>
-				<button
-					type="button"
-					onclick={() => void clearBoardContent()}
-					disabled={mcpLoading}
-					class="rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-				>
-					Clear Board
-				</button>
 			{/if}
 		</div>
 		{#if mcpPanelOpen}
@@ -1422,27 +1324,10 @@
 						type="button"
 						class="mb-0.5 h-9 rounded-md bg-sky-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
 						onclick={() => void runBoardMcpAction()}
-						disabled={mcpLoading || (mcpAction === 'prompt_assistant' && mcpPreviewBlockedCount > 0)}
+						disabled={mcpLoading}
 					>
 						{mcpLoading ? 'Running...' : 'Run MCP Action'}
 					</button>
-					{#if mcpAction === 'prompt_assistant'}
-						<button
-							type="button"
-							class="mb-0.5 h-9 rounded-md border border-cyan-300/40 bg-cyan-500/20 px-3 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-							onclick={async () => {
-								mcpError = '';
-								try {
-									await previewPromptAssistant();
-								} catch (error) {
-									mcpError = error instanceof Error ? error.message : 'Preview failed.';
-								}
-							}}
-							disabled={mcpLoading}
-						>
-							Preview batch
-						</button>
-					{/if}
 					<button
 						type="button"
 						class="mb-0.5 h-9 rounded-md border border-amber-300/40 bg-amber-500/20 px-3 text-sm font-semibold text-amber-100 transition-colors hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1459,26 +1344,8 @@
 					</p>
 				{/if}
 
-				{#if mcpAction === 'prompt_assistant' && mcpPreviewEntries.length > 0}
-					<div class="mt-2 rounded-md border border-cyan-300/20 bg-cyan-500/10 p-3 text-xs text-cyan-50">
-						<p class="font-semibold text-cyan-100">Batch preview</p>
-						<p class="mt-1 text-cyan-100/80">{mcpPreviewSummary}</p>
-						<ul class="mt-2 space-y-1">
-							{#each mcpPreviewEntries as entry}
-								<li class="rounded-sm px-2 py-1 {entry.status === 'blocked'
-										? 'bg-rose-500/20 text-rose-100'
-										: entry.status === 'warning'
-											? 'bg-amber-500/20 text-amber-100'
-											: 'bg-emerald-500/20 text-emerald-100'}">
-									[{entry.status.toUpperCase()}] {entry.description}
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-
 				{#if mcpError}
-					<p class="mt-2 rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
+					<p class="mt-2 whitespace-pre-wrap rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
 						{mcpError}
 					</p>
 				{/if}
