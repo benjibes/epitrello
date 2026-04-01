@@ -34,7 +34,7 @@ export const GET: RequestHandler = async ({ url, request, cookies }) => {
 	const params = new URLSearchParams({
 		client_id: clientId,
 		redirect_uri: redirectUri,
-		scope: 'read:user user:email',
+		scope: 'read:user user:email repo delete_repo',
 		state
 	});
 

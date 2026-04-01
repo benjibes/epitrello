@@ -21,6 +21,9 @@ type MockUser = {
 	password_hash?: string;
 	profile_picture_url?: string;
 	boards?: string[];
+	github_connected?: boolean | string | number;
+	github_login?: string;
+	github_id?: string;
 } | null;
 type MockBoard = {
 	uuid: string;
@@ -28,6 +31,10 @@ type MockBoard = {
 	owner: string;
 	editors?: string[];
 	viewers?: string[];
+	github_enabled?: boolean | string | number;
+	github_repo_owner?: string;
+	github_repo_name?: string;
+	github_base_branch?: string;
 } | null;
 type MockLoginUser = {
 	uuid: string;
@@ -39,6 +46,19 @@ type MockLoginUser = {
 	profile_picture_url?: string;
 	boards?: string[];
 };
+type MockCard = {
+	uuid: string;
+	list: string;
+	name: string;
+	description: string;
+	order: number;
+	date: string | Date;
+	checklist?: [boolean, string][];
+	completed?: boolean;
+	github_branch_name?: string;
+	github_branch_url?: string;
+	github_branch_status?: string;
+} | null;
 type FullBoardMock = {
 	board: { uuid: string; name: string };
 	lists: Array<{
@@ -63,6 +83,7 @@ export const state = {
 	boardsUserGetCalls: [] as string[],
 	boardsCreateCalls: [] as Array<{ ownerId: string; name: string }>,
 	boardsGetCalls: [] as string[],
+	boardsSaveCalls: [] as Array<NonNullable<MockBoard>>,
 	boardsDelCalls: [] as string[],
 	rdbHsetCalls: [] as Array<{ key: string; values: unknown }>,
 	rdbPublishCalls: [] as Array<{ channel: string; message: string }>,
@@ -84,6 +105,9 @@ export const state = {
 	listsDelError: null as Error | null,
 	cardsCreateCalls: [] as Array<{ listId: string; title: string }>,
 	cardsCreatedCardId: 'card-1',
+	cardsCard: null as MockCard,
+	cardsGetCalls: [] as string[],
+	cardsSaveCalls: [] as Array<NonNullable<MockCard>>,
 	cardsCreateError: null as Error | null,
 	cardsDelCalls: [] as string[],
 	cardsDelError: null as Error | null,
@@ -95,6 +119,8 @@ export const state = {
 	loginUsersByEmail: {} as Record<string, MockLoginUser | null>,
 	loginGetByEmailCalls: [] as string[],
 	loginSaveCalls: [] as MockLoginUser[],
+	userGithubTokens: {} as Record<string, string | null>,
+	userGithubTokenGetCalls: [] as string[],
 	userUpdateCalls: [] as Array<{ userId: string; updates: { username?: string } }>,
 	userRoleUpdateCalls: [] as Array<{ userId: string; role: string }>,
 	userUpdateError: null as Error | null,
@@ -185,6 +211,10 @@ const UserConnector = {
 		state.loginUsersByEmail[user.email] = user;
 		state.usersById[user.uuid] = user;
 	},
+	getGithubToken: async (userId: string) => {
+		state.userGithubTokenGetCalls.push(userId);
+		return state.userGithubTokens[userId] ?? null;
+	},
 	updateProfile: async (userId: string, updates: { username?: string }) => {
 		state.userUpdateCalls.push({ userId, updates });
 		const existing = state.usersById[userId];
@@ -230,6 +260,10 @@ const BoardConnector = {
 	get: async (boardId: string) => {
 		state.boardsGetCalls.push(boardId);
 		return state.boardsBoard;
+	},
+	save: async (board: NonNullable<MockBoard>) => {
+		state.boardsSaveCalls.push(board);
+		state.boardsBoard = board;
 	},
 	del: async (boardId: string) => {
 		state.boardsDelCalls.push(boardId);
@@ -284,6 +318,14 @@ const CardConnector = {
 
 		return state.cardsCreatedCardId;
 	},
+	get: async (cardId: string) => {
+		state.cardsGetCalls.push(cardId);
+		return state.cardsCard;
+	},
+	save: async (card: NonNullable<typeof state.cardsCard>) => {
+		state.cardsSaveCalls.push(card);
+		state.cardsCard = card;
+	},
 	del: async (cardId: string) => {
 		state.cardsDelCalls.push(cardId);
 
@@ -310,6 +352,28 @@ const getFullBoard = async (boardId: string) => {
 	return state.getFullBoardValue;
 };
 
+mock.module('@sveltejs/kit', () => ({
+	json: (data: unknown, init?: ResponseInit) =>
+		new Response(JSON.stringify(data), {
+			status: init?.status ?? 200,
+			headers: {
+				'content-type': 'application/json',
+				...(init?.headers ?? {})
+			}
+		}),
+	error: (status: number, body?: string) => {
+		throw { status, body };
+	},
+	redirect: (status: number, location: string) => {
+		throw { status, location };
+	},
+	isRedirect: (value: unknown) =>
+		typeof value === 'object' &&
+		value !== null &&
+		'status' in value &&
+		'location' in value
+}));
+
 mock.module('$lib/server/redisConnector', () => ({
 	rdb,
 	UserConnector,
@@ -329,6 +393,7 @@ export const boardFullRoute = await import('../../src/routes/api/board-full/+ser
 export const loginRoute = await import('../../src/routes/api/login/+server');
 export const usersRoute = await import('../../src/routes/api/users/+server');
 export const mcpRoute = await import('../../src/routes/api/mcp/+server');
+export const githubBranchesRoute = await import('../../src/routes/api/github/branches/+server');
 
 export const expectHttpErrorStatus = async (
 	maybePromise: PromiseLike<unknown> | unknown,
@@ -357,6 +422,7 @@ export function resetMockState() {
 	state.boardsUserGetCalls.length = 0;
 	state.boardsCreateCalls.length = 0;
 	state.boardsGetCalls.length = 0;
+	state.boardsSaveCalls.length = 0;
 	state.boardsDelCalls.length = 0;
 	state.rdbHsetCalls.length = 0;
 	state.rdbPublishCalls.length = 0;
@@ -378,6 +444,9 @@ export function resetMockState() {
 	state.listsDelError = null;
 	state.cardsCreateCalls.length = 0;
 	state.cardsCreatedCardId = 'card-1';
+	state.cardsCard = null;
+	state.cardsGetCalls.length = 0;
+	state.cardsSaveCalls.length = 0;
 	state.cardsCreateError = null;
 	state.cardsDelCalls.length = 0;
 	state.cardsDelError = null;
@@ -389,6 +458,8 @@ export function resetMockState() {
 	state.loginUsersByEmail = {};
 	state.loginGetByEmailCalls.length = 0;
 	state.loginSaveCalls.length = 0;
+	state.userGithubTokens = {};
+	state.userGithubTokenGetCalls.length = 0;
 	state.userUpdateCalls.length = 0;
 	state.userRoleUpdateCalls.length = 0;
 	state.userUpdateError = null;

@@ -85,16 +85,19 @@
 			uuid: list.uuid,
 			name: list.name,
 			newCardTitle: '',
-			cards: list.cards.map((card) => ({
-				id: localId++,
-				uuid: card.uuid,
-				title: card.title,
-				description: card.description ?? '',
-				dueDate: card.dueDate ?? '',
-				assignees: card.assignees ?? [],
-				completed: card.completed ?? false,
-				tags: card.tags ?? []
-			}))
+				cards: list.cards.map((card) => ({
+					id: localId++,
+					uuid: card.uuid,
+					title: card.title,
+					description: card.description ?? '',
+					dueDate: card.dueDate ?? '',
+					assignees: card.assignees ?? [],
+					completed: card.completed ?? false,
+					tags: card.tags ?? [],
+					github_branch_name: card.github_branch_name ?? '',
+					github_branch_url: card.github_branch_url ?? '',
+					github_branch_status: card.github_branch_status ?? ''
+				}))
 		}));
 	}
 

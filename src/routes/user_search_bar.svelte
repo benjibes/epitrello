@@ -56,6 +56,7 @@
 	let isCreatePanelOpen = $state(false);
 	let createBoardName = $state('');
 	let createBoardTemplateId = $state<BoardTemplateId | ''>('');
+	let createGithubRepo = $state(false);
 	let createBoardError = $state('');
 	let isCreatingBoard = $state(false);
 	let createNameInput = $state<HTMLInputElement | null>(null);
@@ -458,6 +459,7 @@
 		closeSearchSuggestions();
 		closeNotificationsPanel();
 		createBoardName = '';
+		createGithubRepo = false;
 		createBoardError = '';
 		isCreatePanelOpen = true;
 		await tick();
@@ -468,6 +470,7 @@
 		if (isCreatingBoard) return;
 		isCreatePanelOpen = false;
 		createBoardTemplateId = '';
+		createGithubRepo = false;
 		createBoardError = '';
 	}
 
@@ -535,7 +538,8 @@
 			body: JSON.stringify({
 				ownerId: currentUserId,
 				name,
-				templateId: createBoardTemplateId || undefined
+				templateId: createBoardTemplateId || undefined,
+				createGithubRepo
 			})
 		});
 
@@ -882,6 +886,25 @@
 							Personal Project
 						</button>
 					</div>
+				</div>
+
+				<div class="mt-6 rounded-lg border border-slate-700/60 bg-slate-800/45 p-4">
+					<label class="flex items-start gap-3">
+						<input
+							type="checkbox"
+							class="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-400"
+							bind:checked={createGithubRepo}
+							disabled={isCreatingBoard}
+						/>
+						<div>
+							<p class="text-sm font-semibold text-slate-100">Create linked GitHub repository</p>
+							<p class="mt-1 text-xs text-slate-400">
+								Uses the board name as the repository name, initializes a default
+								<code class="rounded bg-slate-900/80 px-1 py-0.5 text-sky-200">main</code>
+								branch, and links the repo to the new board automatically.
+							</p>
+						</div>
+					</label>
 				</div>
 
 				{#if createBoardError}

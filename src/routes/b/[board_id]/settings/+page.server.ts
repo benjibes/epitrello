@@ -23,7 +23,11 @@ export const load: PageServerLoad = async ({ params }) => {
 			ownerUser: owner?.username ?? '',
 			listCount: board.lists?.length ?? 0,
 			theme: board.theme,
-			backgroundImageUrl: board.background_image_url
+			backgroundImageUrl: board.background_image_url,
+			githubEnabled: board.github_enabled ?? false,
+			githubRepoOwner: board.github_repo_owner ?? '',
+			githubRepoName: board.github_repo_name ?? '',
+			githubBaseBranch: board.github_base_branch ?? ''
 		}
 	};
 };

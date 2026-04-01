@@ -162,6 +162,140 @@ function resolveBoardTemplate(templateId: unknown) {
 	return BOARD_TEMPLATES.find((template) => template.id === normalizedTemplateId) ?? null;
 }
 
+function slugifyGithubRepoName(value: string) {
+	return value
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-z0-9._-]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.replace(/-+/g, '-')
+		.slice(0, 100);
+}
+
+function githubHeaders(token: string, userAgent: string, extraHeaders: Record<string, string> = {}) {
+	return {
+		Authorization: `Bearer ${token}`,
+		Accept: 'application/vnd.github+json',
+		'User-Agent': userAgent,
+		'X-GitHub-Api-Version': '2022-11-28',
+		...extraHeaders
+	};
+}
+
+async function createGithubRepoForBoard({
+	userId,
+	boardName
+}: {
+	userId: UUID;
+	boardName: string;
+}) {
+	const githubToken = await UserConnector.getGithubToken(userId);
+	if (!githubToken) {
+		throw error(400, 'GitHub account not connected');
+	}
+
+	const githubUserAgent = 'EpiTrello-GitHub/1.0';
+	const repoName = slugifyGithubRepoName(boardName);
+	if (!repoName) {
+		throw error(400, 'Unable to derive a valid GitHub repository name from board name');
+	}
+
+	const createRepoRes = await fetch('https://api.github.com/user/repos', {
+		method: 'POST',
+		headers: githubHeaders(githubToken, githubUserAgent, {
+			'Content-Type': 'application/json'
+		}),
+		body: JSON.stringify({
+			name: repoName,
+			auto_init: true
+		})
+	});
+
+	if (!createRepoRes.ok) {
+		const body = await createRepoRes.text();
+		console.error('GitHub create repo error', createRepoRes.status, body);
+		throw error(502, 'Unable to create GitHub repository');
+	}
+
+	const createdRepo = (await createRepoRes.json()) as {
+		name: string;
+		default_branch?: string;
+		owner?: { login?: string };
+	};
+
+	const repoOwner = createdRepo.owner?.login?.trim();
+	const createdRepoName = createdRepo.name?.trim();
+	const currentDefaultBranch = createdRepo.default_branch?.trim() || 'main';
+
+	if (!repoOwner || !createdRepoName) {
+		throw error(502, 'GitHub repository created but response was incomplete');
+	}
+
+	if (currentDefaultBranch !== 'main') {
+		const refRes = await fetch(
+			`https://api.github.com/repos/${repoOwner}/${createdRepoName}/git/ref/heads/${currentDefaultBranch}`,
+			{
+				headers: githubHeaders(githubToken, githubUserAgent)
+			}
+		);
+
+		if (!refRes.ok) {
+			const body = await refRes.text();
+			console.error('GitHub repo default branch read error', refRes.status, body);
+			throw error(502, 'Unable to initialize GitHub main branch');
+		}
+
+		const refJson = (await refRes.json()) as { object?: { sha?: string } };
+		const baseSha = refJson.object?.sha;
+		if (!baseSha) {
+			throw error(502, 'GitHub repository SHA not found for default branch');
+		}
+
+		const createMainRes = await fetch(
+			`https://api.github.com/repos/${repoOwner}/${createdRepoName}/git/refs`,
+			{
+				method: 'POST',
+				headers: githubHeaders(githubToken, githubUserAgent, {
+					'Content-Type': 'application/json'
+				}),
+				body: JSON.stringify({
+					ref: 'refs/heads/main',
+					sha: baseSha
+				})
+			}
+		);
+
+		if (!createMainRes.ok) {
+			const body = await createMainRes.text();
+			console.error('GitHub create main branch error', createMainRes.status, body);
+			throw error(502, 'Unable to create GitHub main branch');
+		}
+
+		const patchRepoRes = await fetch(`https://api.github.com/repos/${repoOwner}/${createdRepoName}`, {
+			method: 'PATCH',
+			headers: githubHeaders(githubToken, githubUserAgent, {
+				'Content-Type': 'application/json'
+			}),
+			body: JSON.stringify({
+				default_branch: 'main'
+			})
+		});
+
+		if (!patchRepoRes.ok) {
+			const body = await patchRepoRes.text();
+			console.error('GitHub set main default branch error', patchRepoRes.status, body);
+			throw error(502, 'Unable to set GitHub main branch as default');
+		}
+	}
+
+	return {
+		repoOwner,
+		repoName: createdRepoName,
+		baseBranch: 'main'
+	};
+}
+
 async function seedBoardFromTemplate(boardId: string, template: BoardTemplate) {
 	let createdCardCount = 0;
 
@@ -242,6 +376,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const ownerId = body.ownerId as UUID;
 	const name = String(body.name).trim();
+	const createGithubRepo = Boolean(body.createGithubRepo);
 
 	if (!name) {
 		return json({ error: 'Le nom du board ne peut pas être vide' }, { status: 400 });
@@ -284,6 +419,53 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
+	if (createGithubRepo) {
+		try {
+			const board = await BoardConnector.get(uuid as UUID);
+			if (!board) {
+				throw error(404, 'Board not found after creation');
+			}
+
+			const githubRepo = await createGithubRepoForBoard({
+				userId: ownerId,
+				boardName: name
+			});
+
+			board.github_enabled = true;
+			board.github_repo_owner = githubRepo.repoOwner;
+			board.github_repo_name = githubRepo.repoName;
+			board.github_base_branch = githubRepo.baseBranch;
+			await BoardConnector.save(board);
+
+			notifyBoardUpdated({
+				boardId: String(uuid),
+				actorId: ownerId,
+				source: 'board',
+				history: {
+					action: 'board.github.repo_linked',
+					message: `Linked GitHub repository "${githubRepo.repoOwner}/${githubRepo.repoName}".`,
+					metadata: {
+						repoOwner: githubRepo.repoOwner,
+						repoName: githubRepo.repoName,
+						baseBranch: githubRepo.baseBranch
+					}
+				}
+			});
+		} catch (githubError) {
+			console.error('Erreur create linked GitHub repo', githubError);
+			await BoardConnector.del(uuid as UUID);
+			if (
+				typeof githubError === 'object' &&
+				githubError !== null &&
+				'status' in githubError &&
+				'body' in githubError
+			) {
+				throw githubError;
+			}
+			return json({ error: 'Unable to create linked GitHub repository' }, { status: 500 });
+		}
+	}
+
 	const board = await BoardConnector.get(uuid as UUID);
 	const createdBoardName = board?.name ?? name;
 
@@ -319,30 +501,39 @@ export const POST: RequestHandler = async ({ request }) => {
 	);
 };
 export const PATCH: RequestHandler = async ({ request }) => {
-	const { boardId, name, userId } = await request.json();
-	const normalizedName = typeof name === 'string' ? name.trim() : '';
+	const { boardId, name, userId, githubEnabled, githubRepoOwner, githubRepoName, githubBaseBranch } = await request.json();
 
-	if (!boardId || !normalizedName) {
-		throw error(400, 'boardId and name required');
+	if (!boardId || !userId) {
+		throw error(400, 'boardId and userId required');
 	}
 
 	await requireBoardAccess(boardId as UUID, userId, 'owner', {
 		allowLegacyWithoutUserId: true
 	});
 
-	await rdb.hset(`board:${boardId}`, { name: normalizedName });
-	notifyBoardUpdated({
-		boardId: String(boardId),
-		actorId: userId,
-		source: 'board',
-		history: {
-			action: 'board.renamed',
-			message: `Renamed board to "${normalizedName}".`,
-			metadata: { name: normalizedName }
-		}
-	});
+	const board = await BoardConnector.get(boardId as UUID);
+	if (!board) {
+		throw error(404, 'Board not found');
+	}
 
-	return json({ ok: true });
+	const normalizedName = typeof name === 'string' ? name.trim() : '';
+	if (typeof name === 'string' && !normalizedName) {
+		throw error(400, 'name cannot be empty');
+	}
+
+	if (githubEnabled && (!githubRepoOwner || !githubRepoName || !githubBaseBranch)) {
+		throw error(400, 'GitHub config incomplete');
+	}
+
+	if (normalizedName) {
+		board.name = normalizedName;
+	}
+	board.github_enabled = Boolean(githubEnabled);
+	board.github_repo_owner = githubEnabled ? (githubRepoOwner ?? '').trim() : '';
+	board.github_repo_name = githubEnabled ? (githubRepoName ?? '').trim() : '';
+	board.github_base_branch = githubEnabled ? (githubBaseBranch ?? '').trim() : '';
+	await BoardConnector.save(board);
+	return json({ ok: true, board });
 };
 
 export const DELETE: RequestHandler = async ({ url }) => {

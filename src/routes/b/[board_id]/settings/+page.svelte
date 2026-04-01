@@ -22,6 +22,10 @@
 				listCount: number;
 				theme: string;
 				backgroundImageUrl: string;
+				githubEnabled: boolean;
+				githubRepoOwner: string;
+				githubRepoName: string;
+				githubBaseBranch: string;
 			};
 		};
 	}>();
@@ -31,10 +35,17 @@
 	let currentUserId = $state('');
 	let isOwner = $state(false);
 	let saving = $state(false);
+	let creatingGithubRepo = $state(false);
+	let deletingGithubRepo = $state(false);
+	let unlinkingGithubRepo = $state(false);
 	let deleting = $state(false);
 	let clearing = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');
+	let githubEnabled = $state(false);
+	let githubRepoOwner = $state('');
+	let githubRepoName = $state('');
+	let githubBaseBranch = $state('main');
 	let sharingError = $state('');
 	let sharingLoading = $state(false);
 	let shareLink = $state('');
@@ -68,6 +79,10 @@
 		currentUserId = currentUser.id;
 		isOwner = currentUser.id === data.board.owner;
 		boardName = data.board.name;
+		githubEnabled = data.board.githubEnabled;
+		githubRepoOwner = data.board.githubRepoOwner;
+		githubRepoName = data.board.githubRepoName;
+		githubBaseBranch = data.board.githubBaseBranch || 'main';
 		if (isOwner) {
 			void loadSharingSettings();
 		}
@@ -184,20 +199,46 @@
 			return;
 		}
 
+		const trimmedGithubRepoOwner = githubRepoOwner.trim();
+		const trimmedGithubRepoName = githubRepoName.trim();
+		const trimmedGithubBaseBranch = githubBaseBranch.trim();
+
+		if (
+			githubEnabled &&
+			(!trimmedGithubRepoOwner || !trimmedGithubRepoName || !trimmedGithubBaseBranch)
+		) {
+			errorMessage = 'GitHub repo owner, repo name and base branch are required.';
+			return;
+		}
+
 		saving = true;
 		try {
 			const response = await fetch('/api/boards', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ boardId: data.board.id, name: trimmedName, userId: currentUserId })
+				body: JSON.stringify({
+					boardId: data.board.id,
+					name: trimmedName,
+					userId: currentUserId,
+					githubEnabled,
+					githubRepoOwner: githubEnabled ? trimmedGithubRepoOwner : '',
+					githubRepoName: githubEnabled ? trimmedGithubRepoName : '',
+					githubBaseBranch: githubEnabled ? trimmedGithubBaseBranch : ''
+				})
 			});
 
 			if (!response.ok) {
-				errorMessage = 'Unable to save board settings.';
+				const payload = (await response.json().catch(() => null)) as
+					| { error?: string; message?: string }
+					| null;
+				errorMessage = payload?.error ?? payload?.message ?? 'Unable to save board settings.';
 				return;
 			}
 
 			boardName = trimmedName;
+			githubRepoOwner = trimmedGithubRepoOwner;
+			githubRepoName = trimmedGithubRepoName;
+			githubBaseBranch = trimmedGithubBaseBranch || 'main';
 			successMessage = 'Settings saved.';
 		} catch (err) {
 			console.error('Erreur save board settings', err);
@@ -238,6 +279,135 @@
 			errorMessage = 'Network error while deleting.';
 		} finally {
 			deleting = false;
+		}
+	}
+
+	async function handleCreateGithubRepo() {
+		if (!currentUserId || creatingGithubRepo || !isOwner) return;
+
+		creatingGithubRepo = true;
+		errorMessage = '';
+		successMessage = '';
+
+		try {
+			const response = await fetch('/api/github/repos', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					boardId: data.board.id,
+					userId: currentUserId
+				})
+			});
+
+			const payload = (await response.json().catch(() => null)) as
+				| { ok?: boolean; error?: string; message?: string; repoOwner?: string; repoName?: string; baseBranch?: string }
+				| null;
+
+			if (!response.ok) {
+				errorMessage =
+					payload?.error ?? payload?.message ?? 'Unable to create linked GitHub repository.';
+				return;
+			}
+
+			githubEnabled = true;
+			githubRepoOwner = payload?.repoOwner ?? '';
+			githubRepoName = payload?.repoName ?? '';
+			githubBaseBranch = payload?.baseBranch ?? 'main';
+			successMessage = 'GitHub repository created and linked to this board.';
+		} catch (err) {
+			console.error('Erreur create linked GitHub repo', err);
+			errorMessage = 'Network error while creating linked GitHub repository.';
+		} finally {
+			creatingGithubRepo = false;
+		}
+	}
+
+	async function handleUnlinkGithubRepo() {
+		if (!currentUserId || unlinkingGithubRepo || !isOwner) return;
+
+		const confirmUnlink = confirm('Unlink this GitHub repository from the board?');
+		if (!confirmUnlink) return;
+
+		unlinkingGithubRepo = true;
+		errorMessage = '';
+		successMessage = '';
+
+		try {
+			const response = await fetch('/api/github/repos', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					boardId: data.board.id,
+					userId: currentUserId,
+					deleteOnGithub: false
+				})
+			});
+
+			const payload = (await response.json().catch(() => null)) as
+				| { error?: string; message?: string }
+				| null;
+
+			if (!response.ok) {
+				errorMessage = payload?.error ?? payload?.message ?? 'Unable to unlink GitHub repository.';
+				return;
+			}
+
+			githubEnabled = false;
+			githubRepoOwner = '';
+			githubRepoName = '';
+			githubBaseBranch = 'main';
+			successMessage = 'GitHub repository unlinked from this board.';
+		} catch (err) {
+			console.error('Erreur unlink GitHub repo', err);
+			errorMessage = 'Network error while unlinking GitHub repository.';
+		} finally {
+			unlinkingGithubRepo = false;
+		}
+	}
+
+	async function handleDeleteGithubRepo() {
+		if (!currentUserId || deletingGithubRepo || !isOwner) return;
+
+		const confirmDelete = confirm(
+			`Delete the GitHub repository "${githubRepoOwner}/${githubRepoName}" and unlink it from this board?`
+		);
+		if (!confirmDelete) return;
+
+		deletingGithubRepo = true;
+		errorMessage = '';
+		successMessage = '';
+
+		try {
+			const response = await fetch('/api/github/repos', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					boardId: data.board.id,
+					userId: currentUserId,
+					deleteOnGithub: true
+				})
+			});
+
+			const payload = (await response.json().catch(() => null)) as
+				| { error?: string; message?: string }
+				| null;
+
+			if (!response.ok) {
+				errorMessage =
+					payload?.error ?? payload?.message ?? 'Unable to delete GitHub repository.';
+				return;
+			}
+
+			githubEnabled = false;
+			githubRepoOwner = '';
+			githubRepoName = '';
+			githubBaseBranch = 'main';
+			successMessage = 'GitHub repository deleted and unlinked from this board.';
+		} catch (err) {
+			console.error('Erreur delete GitHub repo', err);
+			errorMessage = 'Network error while deleting GitHub repository.';
+		} finally {
+			deletingGithubRepo = false;
 		}
 	}
 
@@ -323,6 +493,109 @@
 						class="rounded-md border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 						placeholder="Board name..."
 					/>
+				</div>
+
+				<div class="rounded-xl border border-slate-700/70 bg-slate-950/40 p-4">
+					<div class="flex flex-wrap items-center justify-between gap-3">
+						<div>
+							<h2 class="text-sm font-semibold text-slate-100">GitHub integration</h2>
+							<p class="mt-1 text-sm text-slate-300">
+								Optional. This board still works normally without GitHub.
+							</p>
+						</div>
+						<label class="flex items-center gap-2 text-sm font-medium text-slate-200">
+							<input
+								type="checkbox"
+								class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-400"
+								bind:checked={githubEnabled}
+								disabled={!isOwner}
+							/>
+							<span>Enable GitHub</span>
+						</label>
+					</div>
+
+					{#if !githubEnabled && isOwner}
+						<div class="mt-4 flex flex-wrap items-center gap-3">
+							<button
+								type="button"
+								class="cursor-pointer rounded-md border border-emerald-300/30 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+								onclick={handleCreateGithubRepo}
+								disabled={creatingGithubRepo}
+							>
+								{creatingGithubRepo ? 'Creating repository...' : 'Create and link GitHub repository'}
+							</button>
+							<p class="text-xs text-slate-400">
+								Creates a new repository using the board name and links it automatically.
+							</p>
+						</div>
+					{:else if githubEnabled && isOwner}
+						<div class="mt-4 flex flex-wrap items-center gap-3">
+							<button
+								type="button"
+								class="cursor-pointer rounded-md border border-slate-400/30 bg-slate-700/60 px-4 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/80 disabled:cursor-not-allowed disabled:opacity-60"
+								onclick={handleUnlinkGithubRepo}
+								disabled={unlinkingGithubRepo || deletingGithubRepo}
+							>
+								{unlinkingGithubRepo ? 'Unlinking...' : 'Unlink repository'}
+							</button>
+							<button
+								type="button"
+								class="cursor-pointer rounded-md border border-rose-300/30 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+								onclick={handleDeleteGithubRepo}
+								disabled={deletingGithubRepo || unlinkingGithubRepo}
+							>
+								{deletingGithubRepo ? 'Deleting repository...' : 'Delete repository on GitHub'}
+							</button>
+						</div>
+					{/if}
+
+					<div class="mt-4 grid gap-3 md:grid-cols-3">
+						<div class="grid gap-1.5">
+							<label for="github-owner" class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+								Repo owner
+							</label>
+							<input
+								id="github-owner"
+								type="text"
+								bind:value={githubRepoOwner}
+								disabled={!isOwner || !githubEnabled}
+								class="rounded-md border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none disabled:opacity-60"
+								placeholder="octocat"
+							/>
+						</div>
+
+						<div class="grid gap-1.5">
+							<label for="github-repo" class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+								Repo name
+							</label>
+							<input
+								id="github-repo"
+								type="text"
+								bind:value={githubRepoName}
+								disabled={!isOwner || !githubEnabled}
+								class="rounded-md border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none disabled:opacity-60"
+								placeholder="hello-world"
+							/>
+						</div>
+
+						<div class="grid gap-1.5">
+							<label for="github-base-branch" class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+								Base branch
+							</label>
+							<input
+								id="github-base-branch"
+								type="text"
+								bind:value={githubBaseBranch}
+								disabled={!isOwner || !githubEnabled}
+								class="rounded-md border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none disabled:opacity-60"
+								placeholder="main"
+							/>
+						</div>
+					</div>
+
+					<p class="mt-3 text-xs text-slate-400">
+						When enabled, cards can create GitHub branches from this repository.
+					</p>
 				</div>
 
 				<button

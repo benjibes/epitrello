@@ -7,6 +7,9 @@ export type UiCard = {
 	assignees: string[];
 	completed: boolean;
 	tags: string[];
+	github_branch_name?: string;
+	github_branch_url?: string;
+	github_branch_status?: string;
 };
 
 export type UiList = {
@@ -65,6 +68,9 @@ export type BoardFullResponse = {
 			order: number;
 			completed: boolean;
 			tags: string[];
+			github_branch_name?: string;
+			github_branch_url?: string;
+			github_branch_status?: string;
 		}>;
 	}>;
 };
