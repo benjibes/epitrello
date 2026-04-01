@@ -12,7 +12,8 @@ export const BoardSchema = z.object({
 	background_image_url: z.union([z.url(), z.literal('')]),
 	theme: z.union([z.string(), z.literal('')]),
 	share_token: z.string().optional().default(''),
-	share_default_role: ShareRoleSchema.optional().default('viewer')
+	share_default_role: ShareRoleSchema.optional().default('viewer'),
+	
 });
 
 export type IBoard = z.infer<typeof BoardSchema>;
