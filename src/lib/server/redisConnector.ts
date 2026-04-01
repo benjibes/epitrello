@@ -5,7 +5,17 @@ import { TagSchema, type ITag } from '$lib/interfaces/ITag';
 import { CardSchema, type ICard } from '$lib/interfaces/ICard';
 export type UUID = string;
 
-export const rdb = new Bun.RedisClient(process.env.REDIS_URL);
+import Redis from "ioredis";
+
+const redisUrl = process.env.REDIS_URL;
+
+if (!redisUrl) {
+	throw new Error("Missing REDIS_URL");
+}
+
+export const rdb = new Redis(redisUrl, {
+	maxRetriesPerRequest: 1
+});
 
 export class UserConnector {
 	static async save(user: IUser) {
