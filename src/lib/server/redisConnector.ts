@@ -15,7 +15,11 @@ export class UserConnector {
 			email: user.email,
 			role: user.role,
 			password_hash: user.password_hash ?? '',
-			profile_picture_url: user.profile_picture_url ?? ''
+			profile_picture_url: user.profile_picture_url ?? '',
+			github_connected: user.github_connected ? 'true' : 'false',
+			github_login: user.github_login ?? '',
+			github_id: user.github_id ?? ''
+
 		});
 
 		if (user.email) {
@@ -38,6 +42,18 @@ export class UserConnector {
 		user.boards = await rdb.smembers(`user:${userId}:boards`);
 
 		return user;
+	}
+
+	static async saveGithubToken(userId: UUID, token: string) {
+		await rdb.set(`user:${userId}:github_token`, token);
+	}
+
+	static async getGithubToken(userId: UUID) {
+		return await rdb.get(`user:${userId}:github_token`);
+	}
+
+	static async deleteGithubToken(userId: UUID) {
+		await rdb.del(`user:${userId}:github_token`);
 	}
 
 	static async getAll(): Promise<IUser[]> {
@@ -127,7 +143,11 @@ export class BoardConnector {
 			background_image_url: '',
 			theme: 'default',
 			share_token: Bun.randomUUIDv7(),
-			share_default_role: 'viewer'
+			share_default_role: 'viewer',
+			github_enabled: 'false',
+			github_repo_owner: '',
+			github_repo_name: '',
+			github_base_branch: ''
 		});
 
 		await rdb.sadd(`user:${ownerId}:boards`, uuid);
@@ -142,7 +162,12 @@ export class BoardConnector {
 			background_image_url: board.background_image_url,
 			theme: board.theme,
 			share_token: board.share_token,
-			share_default_role: board.share_default_role
+			share_default_role: board.share_default_role,
+			github_enabled: board.github_enabled ? 'true' : 'false',
+			github_repo_owner: board.github_repo_owner ?? '',
+			github_repo_name: board.github_repo_name ?? '',
+			github_base_branch: board.github_base_branch ?? ''
+
 		});
 
 		if (board.editors) {
@@ -362,7 +387,10 @@ export class CardConnector {
 			order: card.order,
 			date: card.date.toLocaleString(),
 			checklist: JSON.stringify(card.checklist),
-			completed: card.completed ? 1 : 0
+			completed: card.completed ? 1 : 0,
+			github_branch_name: card.github_branch_name ?? '',
+			github_branch_url: card.github_branch_url ?? '',
+			github_branch_status: card.github_branch_status ?? ''
 		});
 
 		if (card.tags) {

@@ -32,6 +32,8 @@
 	let editorNewTag = $state('');
 	let editorSelectedAssignee = $state('');
 	let initializedForCard = $state<string | null>(null);
+	let githubBranchLoading = $state(false);
+	let githubBranchError = $state('');
 
 	const selectedCardKey = $derived(
 		selectedCard
@@ -56,6 +58,8 @@
 			editorDueDate = '';
 			editorNewTag = '';
 			editorSelectedAssignee = '';
+			githubBranchLoading = false;
+			githubBranchError = '';
 			return;
 		}
 
@@ -63,10 +67,82 @@
 		editorDueDate = selectedCard.dueDate ?? '';
 		editorNewTag = '';
 		editorSelectedAssignee = '';
+		githubBranchLoading = false;
+		githubBranchError = '';
 	});
 
 	function closeDetails() {
 		dispatch('close');
+	}
+
+	async function createGithubBranch() {
+		if (!canEdit || !selectedCard || !selectedCard.uuid) return;
+
+		githubBranchLoading = true;
+		githubBranchError = '';
+
+		try {
+			const response = await fetch('/api/github/branches', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					cardId: selectedCard.uuid,
+					userId: currentUserId
+				})
+			});
+
+			if (!response.ok) {
+				const payload = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+				githubBranchError =
+					payload?.message ?? payload?.error ?? 'Unable to create GitHub branch';
+				return;
+			}
+
+			const result = await response.json();
+
+			selectedCard.github_branch_name = result.branchName;
+			selectedCard.github_branch_url = result.branchUrl;
+			selectedCard.github_branch_status = 'created';
+		} catch (err) {
+			console.error('Erreur création branche GitHub', err);
+			githubBranchError = 'Network error while creating GitHub branch';
+		} finally {
+			githubBranchLoading = false;
+		}
+	}
+
+	async function deleteGithubBranch() {
+		if (!canEdit || !selectedCard || !selectedCard.uuid) return;
+
+		githubBranchLoading = true;
+		githubBranchError = '';
+
+		try {
+			const response = await fetch('/api/github/branches', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					cardId: selectedCard.uuid,
+					userId: currentUserId
+				})
+			});
+
+			if (!response.ok) {
+				const payload = (await response.json().catch(() => null)) as
+					| { message?: string; error?: string }
+					| null;
+				githubBranchError = payload?.message ?? payload?.error ?? 'Unable to delete GitHub branch';
+				return;
+			}
+
+			selectedCard.github_branch_url = '';
+			selectedCard.github_branch_status = 'deleted';
+		} catch (err) {
+			console.error('Erreur suppression branche GitHub', err);
+			githubBranchError = 'Network error while deleting GitHub branch';
+		} finally {
+			githubBranchLoading = false;
+		}
 	}
 
 	async function persistCardFields(cardUuid: string | undefined, fields: Record<string, unknown>) {
@@ -375,6 +451,75 @@
 							Set
 						</button>
 					</form>
+				</section>
+
+				<section>
+					<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+						GitHub Branch
+					</h3>
+					<div class="rounded-md border border-slate-700 bg-slate-800/60 p-3">
+						{#if selectedCard.github_branch_name}
+							{#if selectedCard.github_branch_status === 'created' && selectedCard.github_branch_url}
+								<p class="text-sm text-slate-300">
+									Linked branch:
+									<a
+										href={selectedCard.github_branch_url}
+										target="_blank"
+										rel="noreferrer"
+										class="font-medium text-sky-300 underline decoration-sky-400/70 underline-offset-2 transition-colors hover:text-sky-200"
+									>
+										{selectedCard.github_branch_name}
+									</a>
+								</p>
+								{#if canEdit}
+									<button
+										type="button"
+										class="mt-3 inline-flex h-8 min-w-36 cursor-pointer items-center justify-center rounded-md border border-rose-300/35 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 transition-all hover:border-rose-300/60 hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+										onclick={deleteGithubBranch}
+										disabled={githubBranchLoading}
+									>
+										{githubBranchLoading ? 'Deleting...' : 'Delete GitHub branch'}
+									</button>
+								{/if}
+							{:else}
+								<p class="text-sm text-slate-300">
+									Last linked branch:
+									<span class="font-medium text-slate-200">{selectedCard.github_branch_name}</span>
+								</p>
+								{#if canEdit}
+									<button
+										type="button"
+										class="mt-3 inline-flex h-8 min-w-40 cursor-pointer items-center justify-center rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+										onclick={createGithubBranch}
+										disabled={githubBranchLoading}
+									>
+										{githubBranchLoading ? 'Creating...' : 'Create new GitHub branch'}
+									</button>
+								{/if}
+							{/if}
+						{:else if canEdit}
+							<button
+								type="button"
+								class="inline-flex h-8 min-w-36 cursor-pointer items-center justify-center rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+								onclick={createGithubBranch}
+								disabled={githubBranchLoading}
+							>
+								{githubBranchLoading ? 'Creating...' : 'Create GitHub branch'}
+							</button>
+						{:else}
+							<p class="text-xs text-slate-400">No GitHub branch linked to this card.</p>
+						{/if}
+
+						{#if selectedCard.github_branch_status}
+							<p class="mt-2 text-xs text-slate-400">
+								Status: <span class="font-medium text-slate-200">{selectedCard.github_branch_status}</span>
+							</p>
+						{/if}
+
+						{#if githubBranchError}
+							<p class="mt-2 text-xs text-rose-300">{githubBranchError}</p>
+						{/if}
+					</div>
 				</section>
 
 				<section class="md:col-span-2">

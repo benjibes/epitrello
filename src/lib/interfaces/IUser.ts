@@ -13,7 +13,10 @@ export const UserSchema = z
 		email: z.email(),
 		password_hash: z.union([z.hash('sha256'), z.literal('')]),
 		profile_picture_url: z.union([z.url(), z.literal('')]),
-		boards: z.array(z.uuidv7()).optional()
+		boards: z.array(z.uuidv7()).optional(),
+		github_connected: z.union([z.boolean(), z.string(), z.number()]).optional(),
+		github_login: z.string().optional(),
+		github_id: z.string().optional()
 	})
 	.transform(({ admin: _legacyAdmin, role, ...rest }) => ({
 		...rest,

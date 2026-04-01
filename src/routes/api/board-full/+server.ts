@@ -33,6 +33,11 @@ export const GET: RequestHandler = async ({ url }) => {
 						rdb.hget(`card:${card.uuid}`, 'dueDate'),
 						rdb.hget(`card:${card.uuid}`, 'description')
 					]);
+					const [githubBranchNameRaw, githubBranchUrlRaw, githubBranchStatusRaw] = await Promise.all([
+						rdb.hget(`card:${card.uuid}`, 'github_branch_name'),
+						rdb.hget(`card:${card.uuid}`, 'github_branch_url'),
+						rdb.hget(`card:${card.uuid}`, 'github_branch_status')
+					]);
 					const tagNames: string[] = [];
 
 					for (const tagId of tagIds) {
@@ -50,7 +55,10 @@ export const GET: RequestHandler = async ({ url }) => {
 						assignees: assignees.map((assignee) => String(assignee)),
 						order: card.order,
 						completed: card.completed ?? false,
-						tags: tagNames
+						tags: tagNames,
+						github_branch_name: String(githubBranchNameRaw ?? ''),
+						github_branch_url: String(githubBranchUrlRaw ?? ''),
+						github_branch_status: String(githubBranchStatusRaw ?? '')
 					};
 				})
 			);

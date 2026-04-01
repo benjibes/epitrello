@@ -127,6 +127,13 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 
 			await UserConnector.save(user);
 		}
+		
+		user.github_connected = true;
+		user.github_login = ghUser.login;
+		user.github_id = String(ghUser.id);
+
+		await UserConnector.save(user);
+		await UserConnector.saveGithubToken(user.uuid, accessToken);
 
 		const safeUser = {
 			id: user.uuid,
