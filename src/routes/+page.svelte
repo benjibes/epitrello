@@ -1,7 +1,8 @@
 <script lang="ts">
 	import '../app.css';
 	import TopBar from './top_bar.svelte';
-	import Monitor from '$lib/assets/illustrations/monitor.png';
+
+	const Monitor = '/illustrations/monitor.png';
 </script>
 
 <TopBar login={false} />

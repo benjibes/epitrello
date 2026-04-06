@@ -1,10 +1,11 @@
 <script lang="ts">
-	import EpitrelloLogo from '$lib/assets/logos/epitrello-logo.png';
 	import LogoutButton from '$lib/LogoutButton.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
+
+	const EpitrelloLogo = '/logos/epitrello-logo.png';
 
 	type SessionUser = {
 		id: string;

@@ -1,12 +1,13 @@
 <script lang="ts">
-	import Epitrellologo from '$lib/assets/logos/epitrello-logo.png';
-	import GithubLogo from '$lib/assets/logos/github.svg';
-	import MicrosoftLogo from '$lib/assets/logos/microsoft.png';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import TopBar from '../top_bar.svelte';
+
+	const Epitrellologo = '/logos/epitrello-logo.png';
+	const GithubLogo = '/logos/github.svg';
+	const MicrosoftLogo = '/logos/microsoft.png';
 
 	let email = '';
 	let password = '';
