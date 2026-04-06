@@ -1,6 +1,7 @@
 <script lang="ts">
-	import epitrello_logo from '$lib/assets/logos/epitrello-logo.png';
 	import { resolve } from '$app/paths';
+
+	const epitrello_logo = '/logos/epitrello-logo.png';
 	export let login: boolean;
 </script>
 
