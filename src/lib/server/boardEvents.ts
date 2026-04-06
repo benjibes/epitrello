@@ -12,11 +12,14 @@ export type BoardUpdatedEvent = {
 };
 
 type BoardEventListener = (event: BoardUpdatedEvent) => void;
+type RedisSubscriber = {
+	subscribe: (channel: string, listener: (message: string) => void) => Promise<unknown>;
+};
 
 const listenersByBoard = new Map<string, Set<BoardEventListener>>();
 const BOARD_EVENTS_REDIS_CHANNEL = 'board:events:v1';
 
-let redisSubscriber: Bun.RedisClient | null = null;
+let redisSubscriber: RedisSubscriber | null = null;
 let redisSubscriberInitPromise: Promise<void> | null = null;
 
 function normalizeId(value: unknown): string | null {

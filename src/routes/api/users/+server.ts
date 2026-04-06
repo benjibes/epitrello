@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { IUserRole } from '$lib/interfaces/IUser';
 import { UserConnector } from '$lib/server/redisConnector';
 import { isAdminUser, normalizeUserRole } from '$lib/server/userRoles';
+import { generateUuidV7 } from '$lib/server/uuid';
 
 const MAX_DISPLAY_NAME_LENGTH = 80;
 
@@ -100,7 +101,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		);
 	}
 
-	const uuid = Bun.randomUUIDv7() as UUID;
+	const uuid = generateUuidV7() as UUID;
 	await UserConnector.save({
 		uuid,
 		role,
