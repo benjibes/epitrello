@@ -1,4 +1,5 @@
 import { rdb } from '$lib/server/redisConnector';
+import { generateUuidV7 } from '$lib/server/uuid';
 
 export type BoardHistorySource = 'board' | 'list' | 'card' | 'tag' | 'sharing' | 'unknown';
 
@@ -21,6 +22,13 @@ const MAX_MESSAGE_LENGTH = 320;
 const MAX_METADATA_ENTRIES = 12;
 const MAX_METADATA_KEY_LENGTH = 48;
 const MAX_METADATA_VALUE_LENGTH = 180;
+type RedisListWriter = {
+	lpush: (key: string, ...values: string[]) => Promise<unknown>;
+	ltrim: (key: string, start: number, stop: number) => Promise<unknown>;
+};
+type RedisListReader = {
+	lrange: (key: string, start: number, stop: number) => Promise<unknown[]>;
+};
 
 function boardHistoryKey(boardId: string) {
 	return `board:${boardId}:history:v1`;
@@ -168,14 +176,14 @@ export async function appendBoardHistoryEntry({
 		return;
 	}
 
-	const listRedisClient = rdb as Partial<Pick<Bun.RedisClient, 'lpush' | 'ltrim'>>;
+	const listRedisClient = rdb as Partial<RedisListWriter>;
 	if (typeof listRedisClient.lpush !== 'function' || typeof listRedisClient.ltrim !== 'function') {
 		return;
 	}
 
 	const normalizedSource = normalizeSource(source);
 	const entry: BoardHistoryEntry = {
-		id: Bun.randomUUIDv7(),
+		id: generateUuidV7(),
 		boardId: normalizedBoardId,
 		actorId: normalizeId(actorId),
 		source: normalizedSource,
@@ -205,7 +213,7 @@ export async function getBoardHistoryEntries(boardId: string, limit = DEFAULT_HI
 		? Math.max(1, Math.min(Math.trunc(limit), MAX_HISTORY_LIMIT))
 		: DEFAULT_HISTORY_LIMIT;
 
-	const listRedisClient = rdb as Partial<Pick<Bun.RedisClient, 'lrange'>>;
+	const listRedisClient = rdb as Partial<RedisListReader>;
 	if (typeof listRedisClient.lrange !== 'function') {
 		return [] as BoardHistoryEntry[];
 	}

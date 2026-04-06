@@ -3,6 +3,7 @@ import { BoardSchema, type IBoard, type ShareRole } from '$lib/interfaces/IBoard
 import { ListSchema, type IList } from '$lib/interfaces/IList';
 import { TagSchema, type ITag } from '$lib/interfaces/ITag';
 import { CardSchema, type ICard } from '$lib/interfaces/ICard';
+import { generateUuidV7 } from '$lib/server/uuid';
 export type UUID = string;
 
 import Redis from "ioredis";
@@ -144,7 +145,7 @@ export class UserConnector {
 
 export class BoardConnector {
 	static async create(ownerId: UUID, name: string): Promise<UUID> {
-		const uuid = Bun.randomUUIDv7();
+		const uuid = generateUuidV7();
 
 		await rdb.hset(`board:${uuid}`, {
 			uuid: uuid,
@@ -152,7 +153,7 @@ export class BoardConnector {
 			owner: ownerId,
 			background_image_url: '',
 			theme: 'default',
-			share_token: Bun.randomUUIDv7(),
+			share_token: generateUuidV7(),
 			share_default_role: 'viewer',
 			github_enabled: 'false',
 			github_repo_owner: '',
@@ -306,7 +307,7 @@ export class BoardConnector {
 
 export class ListConnector {
 	static async create(boardId: UUID, name: string) {
-		const uuid = Bun.randomUUIDv7();
+		const uuid = generateUuidV7();
 		const existingListIds = await rdb.smembers(`board:${boardId}:lists`);
 		const existingOrders = await Promise.all(
 			existingListIds.map(async (listId) => {
@@ -373,7 +374,7 @@ export class ListConnector {
 
 export class CardConnector {
 	static async create(listId: UUID, name: string) {
-		const uuid = Bun.randomUUIDv7();
+		const uuid = generateUuidV7();
 
 		await rdb.hset(`card:${uuid}`, {
 			uuid: uuid,
@@ -461,7 +462,7 @@ export class CardConnector {
 
 export class TagConnector {
 	static async create(cardId: UUID, name: string, type: string, color: string) {
-		const uuid = Bun.randomUUIDv7();
+		const uuid = generateUuidV7();
 
 		await rdb.hset(`tag:${uuid}`, {
 			uuid: uuid,

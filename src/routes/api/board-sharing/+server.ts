@@ -5,6 +5,7 @@ import { requireBoardAccess } from '$lib/server/boardAccess';
 import type { ShareRole } from '$lib/interfaces/IBoard';
 import { notifyBoardUpdated } from '$lib/server/boardEvents';
 import { createUserNotification } from '$lib/server/notifications';
+import { generateUuidV7 } from '$lib/server/uuid';
 
 function normalizeId(value: unknown) {
 	return typeof value === 'string' ? value.trim() : '';
@@ -34,7 +35,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const defaultRole = board.share_default_role ?? 'viewer';
 
 	if (!shareToken) {
-		shareToken = Bun.randomUUIDv7();
+		shareToken = generateUuidV7();
 		await rdb.hset(`board:${boardId}`, { share_token: shareToken });
 	}
 

@@ -1,4 +1,5 @@
 import { rdb } from '$lib/server/redisConnector';
+import { generateUuidV7 } from '$lib/server/uuid';
 
 export type UserNotificationType = 'board.added' | 'card.due_date';
 
@@ -101,7 +102,7 @@ export async function createUserNotification(input: CreateUserNotificationInput)
 		return null;
 	}
 
-	const id = Bun.randomUUIDv7();
+	const id = generateUuidV7();
 	const createdAt = new Date().toISOString();
 
 	await rdb.hset(`notification:${id}`, {

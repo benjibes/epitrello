@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { redirect, isRedirect } from '@sveltejs/kit';
 import { UserConnector } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
-import { randomUUID } from 'crypto';
+import { generateUuidV7 } from '$lib/server/uuid';
 
 const defaultRedirectUri = 'http://localhost:5173/auth/github/callback';
 const stateCookieName = 'oauth_github_state';
@@ -114,7 +114,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		let user = await UserConnector.getByEmail(pseudoEmail);
 
 		if (!user) {
-			const newUuid = randomUUID() as UUID;
+			const newUuid = generateUuidV7() as UUID;
 
 			user = {
 				uuid: newUuid,
